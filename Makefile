@@ -3,6 +3,8 @@
 
 .PHONY: all clean
 
+all: myos.iso
+
 SOURCE_DIR := src
 BUILD_DIR  := build
 
@@ -25,18 +27,19 @@ DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
 CFLAGS := -MMD -ffreestanding -O0 -Wall -Wextra -Werror -std=c2x -I$(SOURCE_DIR)/include -no-pie -fstack-protector-strong
 ASFLAGS :=
 
-$(info C_SOURCES is $(C_SOURCES))
-$(info ASM_SOURCES is $(ASM_SOURCES))
-$(info OBJECTS is $(OBJECTS))
-$(info DEPENDS is $(DEPENDS))
-
-all: myos.iso
+#$(info C_SOURCES is $(C_SOURCES))
+#$(info ASM_SOURCES is $(ASM_SOURCES))
+#$(info OBJECTS is $(OBJECTS))
+#$(info DEPENDS is $(DEPENDS))
 
 run: myos.iso
 	qemu-system-i386 -cdrom myos.iso
 
 cross-compiler: cross-compiler-image/Dockerfile
 	podman build cross-compiler-image -t cc-i686
+
+clean:
+	rm -f $(BUILD_DIR) myos.iso
 
 myos.iso: $(BUILD_DIR)/myos.bin
 	@mkdir -p $(BUILD_DIR)/image/boot/grub
@@ -45,7 +48,7 @@ myos.iso: $(BUILD_DIR)/myos.bin
 	grub-mkrescue -o $@ $(BUILD_DIR)/image
 
 $(BUILD_DIR)/myos.bin: $(OBJECTS)
-	mkdir -p $(BUILD_DIR)
+	@mkdir -p $(@D)
 	$(CC) -T linker.ld -o $@ $(CFLAGS) -nostdlib $^ -lgcc
 
 -include $(DEPENDS)
