@@ -47,10 +47,14 @@ void terminal_putentryat(char c, uint8_t color, size_t x, size_t y)
 
 void terminal_scroll(int n)
 {
+	constexpr size_t buf_size = VGA_WIDTH * VGA_HEIGHT; 
+
+	const size_t offset = VGA_WIDTH * n;
+	const size_t len = buf_size - offset;
     memmove(terminal_buf,
-            terminal_buf + VGA_WIDTH * n,
-            VGA_WIDTH * (VGA_HEIGHT-n));
-    for (size_t i = VGA_WIDTH * (VGA_HEIGHT-n); i < VGA_WIDTH * VGA_HEIGHT; i++) {
+			terminal_buf + offset,
+			len * sizeof *terminal_buf);
+    for (size_t i = len; i < buf_size; i++) {
         terminal_buf[i] = vga_entry(' ', t.color);
     }
     t.row -= n;
