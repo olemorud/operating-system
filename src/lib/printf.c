@@ -65,31 +65,10 @@ static int print_long(unsigned long n, struct str alphabet, bool is_signed)
     return i;
 }   
 
-static int print_i16(struct printf_state* s)
-{
-    // int16_t is promoted to 'int' when passed through '...'
-    long n = va_arg(s->ap, int32_t);
-    return print_long(n, str_attach("0123456789"), true);
-}
-
 static int print_i32(struct printf_state* s)
 {
     long n = va_arg(s->ap, int32_t);
     return print_long(n, str_attach("0123456789"), true);
-}
-
-static int print_i64(struct printf_state* s)
-{
-    panic(str_attach("print_i64 not implemented on i686"));
-    long n = va_arg(s->ap, int64_t);
-    return print_long(n, str_attach("0123456789"), true);
-}
-
-static int print_u16(struct printf_state* s)
-{
-    // uint16_t is promoted to 'unsigned int' when passed through '...'
-    unsigned long n = va_arg(s->ap, unsigned int);
-    return print_long(n, str_attach("0123456789"), false);
 }
 
 static int print_u32(struct printf_state* s)
@@ -98,11 +77,19 @@ static int print_u32(struct printf_state* s)
     return print_long(n, str_attach("0123456789"), false);
 }
 
-static int print_u64(struct printf_state* s)
+static int print_x32(struct printf_state* s)
 {
-    panic(str_attach("print_u64 not implemented on i686"));
-    unsigned long n = va_arg(s->ap, uint64_t);
-    return print_long(n, str_attach("0123456789"), false);
+    unsigned long n = va_arg(s->ap, uint32_t);
+    return print_long(n, str_attach("0123456789abcdefgh"), false);
+}
+
+static int print_str(struct printf_state* s)
+{
+	const struct str str = va_arg(s->ap, struct str);
+	for (size_t i=0; i < str.len; i++) {
+		terminal_putchar(str.data[i]);
+	}
+	return str.len;
 }
 
 #pragma GCC diagnostic ignored "-Wmultichar"
@@ -122,19 +109,23 @@ static int parse_format_cmd(struct printf_state* s)
         return -1;
 
     switch (cmd) {
-        case 'i16': return print_i16(s);
-        case 'i32': return print_i32(s);
-        case 'i64': return print_i64(s);
-        case 'u16': return print_u16(s);
-        case 'u32': return print_u32(s);
-        case 'u64': return print_u64(s);
+		// 16 bit types are promoted to 32 bit by va_arg(...) anyways
+        case 'i16':
+        case 'i32':
+			return print_i32(s);
+
+        case 'u16':
+        case 'u32':
+			return print_u32(s);
+
+        case 'x16':
+        case 'x32':
+			return print_x32(s);
+
+		case 'str':
+			return print_str(s);
+
         default:
-            terminal_write(str_attach("\nunknown cmd: "));
-            while (cmd) {
-                terminal_putchar(cmd & CHAR_MASK);
-                cmd >>= CHAR_BIT;
-            }
-            terminal_putchar('\n');
             return -1;
     }
 }
