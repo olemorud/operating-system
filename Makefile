@@ -25,7 +25,7 @@ ASM_SOURCES := $(shell find $(SOURCE_DIR) -name '*.S')
 OBJECTS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(ASM_SOURCES:.S=.o))
 DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
 
-CFLAGS := -MMD -ffreestanding -O0 -Wall -Wextra -Werror -std=c2x -I$(SOURCE_DIR)/include -no-pie -fstack-protector-strong
+CFLAGS := -MMD -ffreestanding -O1 -Wall -Wextra -Werror -std=c2x -I$(SOURCE_DIR)/include -no-pie -fstack-protector-strong
 ASFLAGS :=
 
 #$(info C_SOURCES is $(C_SOURCES))
