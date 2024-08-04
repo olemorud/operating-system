@@ -8,11 +8,12 @@ all: myos.iso
 SOURCE_DIR := src
 BUILD_DIR  := build
 
-CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch"	\
-						    --workdir="/scratch" 			\
-							-e TERM							\
-							-t								\
-							cc-i686:latest
+CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch" \
+                            --workdir="/scratch"         \
+                            --network=none               \
+                            -e TERM                      \
+                            -t                           \
+                            cc-i686:latest
 
 CC := $(CONTAINER_CMD) i686-elf-gcc
 LD := $(CONTAINER_CMD) i686-elf-ld
