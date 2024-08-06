@@ -54,6 +54,11 @@ $(BUILD_DIR)/myos.bin: $(OBJECTS)
 
 -include $(DEPENDS)
 
+$(BUILD_DIR)/kernel/interrupts.o: $(SOURCE_DIR)/kernel/interrupts.c Makefile
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) -mgeneral-regs-only -mno-red-zone $< -o $@
+
+
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c Makefile
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -61,3 +66,4 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c Makefile
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.S Makefile
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@
+

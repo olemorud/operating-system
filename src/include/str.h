@@ -16,3 +16,6 @@ static inline struct str str_slice(struct str s, size_t begin, size_t end)
         .len = s.len - begin - end,
     };
 }
+
+#define CSTR_(x) #x
+#define CSTR(x) CSTR_(x)
