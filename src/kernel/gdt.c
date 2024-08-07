@@ -32,23 +32,23 @@ struct gdt_table_entry gdt_encode_entry(struct gdt_entry_content content)
     return entry;
 }
 
-void gdt_set(uint16_t size, const struct gdt_table_entry base[], uint32_t offset)
-{
-    base += offset;
-
-    /* the lgdt instruction requires a packed alignment */
-    struct __attribute__((packed)) gdtr  {
-        uint16_t size;
-        uint32_t base;
-    } gdt = {
-        .size = size,
-        .base = (uint32_t)base,
-    };
-
-    __asm__ volatile (
-        "lgdt %[gdt]"
-        :
-        : [gdt] "m"(gdt)
-    );
-}
+//void gdt_load(uint16_t size, const struct gdt_table_entry base[], uint32_t offset)
+//{
+//    base += offset;
+//
+//    /* the lgdt instruction requires a packed alignment */
+//    struct __attribute__((packed)) gdtr  {
+//        uint16_t size;
+//        uint32_t base;
+//    } gdt = {
+//        .size = size,
+//        .base = (uint32_t)base,
+//    };
+//
+//    __asm__ volatile (
+//        "lgdt %[gdt]"
+//        :
+//        : [gdt] "m"(gdt)
+//    );
+//}
 

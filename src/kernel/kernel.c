@@ -5,52 +5,69 @@
 #include "gdt.h"
 #include "tss.h"
 #include "idt.h"
+#include "interrupts.h"
+#include "types.h"
+#include "kernel_state.h"
 
 // Future user-space
 #include "libc.h"
 #include "tty.h"
+#include "str.h"
 
-// TOOD: clean up this
-typedef void(*func_t)(void*);
-
-static void ring3_mode(uint32_t, uint32_t, uint32_t, uint32_t, func_t);
-static void user_mode_code(void*);
-
-void gdt_setup_flat_model()
+static void pic_disable()
 {
+    __asm__ volatile ("outb %0, %1"
+            :
+            : "a"((uint8_t)0xff), "Nd"((uint16_t)0x21)
+            : "memory");
+    __asm__ volatile ("outb %0, %1"
+            :
+            : "a"((uint8_t)0xff), "Nd"((uint16_t)0xA1)
+            : "memory");
 }
 
-/* copied and only slightly modified from an osdev wiki article with poor
-   taste, TODO: change
-   ----------------------------------------------*/
 static void user_mode_code(void*)
 {
-    printf(str_attach("hello world :)\n"));
+    printf(str_attach("hello from user-space before interrupt :)\n"));
+    __asm__ volatile ("int $0x80");
+    __asm__ volatile ("int $0x81");
+    //while (1) /* busy loop */;
+
+#if 0
+    printf(str_attach("hello from user-space before exception :)\n"));
+    /* test division by 0 exception */
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wdiv-by-zero"
+    volatile int a = 5/0;
+    (void)a;
+    #pragma GCC diagnostic pop
+
+    // should not happen
+    printf(str_attach("hello from userspace after interrupt and exception!\n"));
+#endif
+    
 }
 
-static void ring3_mode(uint32_t udata_offset, uint32_t udata_rpl, uint32_t ucode_offset, uint32_t ucode_rpl, func_t callback)
+static void ring3_mode(segment_t udata_segment, segment_t ucode_segment, func_t callback)
 {
-    const uint32_t udata = udata_offset | udata_rpl;
-    const uint32_t ucode = ucode_offset | ucode_rpl;
-
     __asm__ volatile (
-		"mov %[udata], %%ax\n"
-		"mov %%ax, %%ds\n"
-		"mov %%ax, %%es\n"
-		"mov %%ax, %%fs\n"
-		"mov %%ax, %%gs\n"
-		"push %%ax\n"
+        "mov %[udata], %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        "push %%ax\n"
 
         "mov %%esp, %%eax\n"
-        "push %%eax\n"       // current esp
+        "push %%eax\n"       // esp
         "pushf\n"            // eflags
         "push %[ucode]\n"
         "push %[callback]\n" // instruction address to return to
         "iret"
         :
-        : [udata]    "m"(udata),
-          [ucode]    "m"(ucode),
-          [callback] "m"(callback)
+        : [udata]    "i"(udata_segment),
+          [ucode]    "i"(ucode_segment),
+          [callback] "i"(callback)
         : "eax"
     );
 }
@@ -65,25 +82,12 @@ void kernel_main(void)
 {
     __asm__ volatile("cli");
 
-    static struct tss tss = {0};
+    _Static_assert(sizeof(kernel.gdt) == 0x30);
 
-    enum segment_index : size_t {
-        null_segment        = 0,
-        kernel_code_segment = 1,
-        kernel_data_segment = 2,
-        user_code_segment   = 3,
-        user_data_segment   = 4,
-        task_state_segment  = 5,
-        segment_count,
-    };
-
-    static struct gdt_table_entry gdt[segment_count];
-    _Static_assert(sizeof(gdt) == 0x30);
-
-    gdt[null_segment] = gdt_encode_entry((struct gdt_entry_content){0});
+    kernel.gdt[SEGMENT_NULL] = gdt_encode_entry((struct gdt_entry_content){0});
 
     /* kernel */
-    gdt[kernel_code_segment] = gdt_encode_entry((struct gdt_entry_content){
+    kernel.gdt[SEGMENT_KERNEL_CODE] = gdt_encode_entry((struct gdt_entry_content){
                      .base = 0,
                      .limit = GDT_LIMIT_MAX,
                      .access_byte = GDT_ACCESS_RW
@@ -91,21 +95,21 @@ void kernel_main(void)
                                   | GDT_ACCESS_DESCRIPTOR
                                   | GDT_ACCESS_DPL_0
                                   | GDT_ACCESS_PRESENT,
-                     .flags = GDT_SIZE
-                            | GDT_GRANULARITY});
+                     .flags = GDT_32BIT
+                            | GDT_GRANULARITY_PAGEWISE});
 
-    gdt[kernel_data_segment] = gdt_encode_entry((struct gdt_entry_content){
+    kernel.gdt[SEGMENT_KERNEL_DATA] = gdt_encode_entry((struct gdt_entry_content){
                      .base = 0,
                      .limit = GDT_LIMIT_MAX,
                      .access_byte = GDT_ACCESS_RW
                                   | GDT_ACCESS_DESCRIPTOR
                                   | GDT_ACCESS_DPL_0
                                   | GDT_ACCESS_PRESENT,
-                     .flags = GDT_SIZE
-                            | GDT_GRANULARITY});
+                     .flags = GDT_32BIT
+                            | GDT_GRANULARITY_PAGEWISE});
 
     /* user */
-    gdt[user_code_segment] = gdt_encode_entry((struct gdt_entry_content) {
+    kernel.gdt[SEGMENT_USER_CODE] = gdt_encode_entry((struct gdt_entry_content) {
                      .base = 0,
                      .limit = GDT_LIMIT_MAX,
                      .access_byte = GDT_ACCESS_RW
@@ -113,54 +117,111 @@ void kernel_main(void)
                                   | GDT_ACCESS_DESCRIPTOR
                                   | GDT_ACCESS_DPL_3
                                   | GDT_ACCESS_PRESENT,
-                     .flags = GDT_SIZE
-                            | GDT_GRANULARITY});
+                     .flags = GDT_32BIT
+                            | GDT_GRANULARITY_PAGEWISE});
 
-    gdt[user_data_segment] = gdt_encode_entry((struct gdt_entry_content) {
+    kernel.gdt[SEGMENT_USER_DATA] = gdt_encode_entry((struct gdt_entry_content) {
                      .base = 0,
                      .limit = GDT_LIMIT_MAX,
                      .access_byte = GDT_ACCESS_RW
                                   | GDT_ACCESS_DESCRIPTOR
                                   | GDT_ACCESS_DPL_3
                                   | GDT_ACCESS_PRESENT,
-                     .flags = GDT_SIZE
-                            | GDT_GRANULARITY});
+                     .flags = GDT_32BIT
+                            | GDT_GRANULARITY_PAGEWISE});
 
     /* tss */
-    gdt[task_state_segment] = gdt_encode_entry((struct gdt_entry_content) {
-                     .base = (uint32_t)&tss,
-                     .limit = sizeof(tss)-1,
+    kernel.gdt[SEGMENT_TASK_STATE] = gdt_encode_entry((struct gdt_entry_content) {
+                     .base = (uint32_t)&kernel.tss,
+                     .limit = sizeof(kernel.tss)-1,
                      .access_byte = GDT_ACCESS_ACCESSED
                                   | GDT_ACCESS_EXEC
                                   | GDT_ACCESS_DPL_0
                                   | GDT_ACCESS_PRESENT,
                      .flags = 0});
 
-    gdt_set(sizeof gdt, gdt, 0);
-
-    gdt_reload(kernel_data_segment * sizeof (struct gdt_table_entry),
-               kernel_code_segment * sizeof (struct gdt_table_entry));
-
     /* Setup the TSS */
-    tss.ss0 = kernel_data_segment * sizeof (struct gdt_table_entry);
-    tss.esp0 = 0; /* TODO: set kernel stack pointer */
+    memset(&kernel.tss, 0, sizeof kernel.tss);
+    kernel.tss.ss0 = segment(SEGMENT_KERNEL_DATA, SEGMENT_GDT, 0);
+#if 1
+    static uint8_t kernel_stack[1024];
+    kernel.tss.esp0 = (uint32_t)kernel_stack;
+#else
+    kernel.tss.esp0 = 0;
+#endif
 
-    tss_load(task_state_segment * sizeof (struct gdt_table_entry));
+#if 1
+    /* Setup the IDT */
+    for (size_t i = 0; i < 32; i++) {
+        kernel.idt[i] = idt_encode_descriptor(
+               exception_default,
+               segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+               IDT_DPL_3,
+               IDT_GATE_TYPE_TRAP32);
+    }
+    for (size_t i = 32; i < IDT_COUNT; i++) {
+        kernel.idt[i] = idt_encode_descriptor(
+               interrupt_default,
+               segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+               IDT_DPL_3,
+               IDT_GATE_TYPE_INTERRUPT32);
+    }
 
-	/* Setup the IDT */
-	//static struct idt_gate_descriptor idt[256] = {0};
+    kernel.idt[0x0] = idt_encode_descriptor(
+            exception_handler_div_by_zero,
+            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+            IDT_DPL_3,
+            IDT_GATE_TYPE_TRAP32
+    );
 
-	//struct idt_gate_descriptor idt_encode_descriptor(uint32_t offset, uint16_t segment_selector, uint8_t ist, enum idt_flags type);
-	//idt[80] = idt_encode_descriptor(interrupt_handler_1, kernel_code_segment, 0, IDT_GATE_TYPE_INTERUPT_GATE_32);
+    kernel.idt[0x8] = idt_encode_descriptor(
+            exception_handler_double_fault,
+            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+            IDT_DPL_3,
+            IDT_GATE_TYPE_TRAP32
+    );
 
-	//idt_load(idt, sizeof idt);
+    kernel.idt[0xD] = idt_encode_descriptor(
+            exception_handler_general_protection_fault,
+            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+            IDT_DPL_3,
+            IDT_GATE_TYPE_TRAP32
+    );
 
-	/* Finally go to ring 3 */
-    ring3_mode(user_data_segment * sizeof (struct gdt_table_entry), 3,
-               user_code_segment * sizeof (struct gdt_table_entry), 3,
-               user_mode_code);
+    // Interrupts
+    kernel.idt[0x80] = idt_encode_descriptor(
+            interrupt_handler_1,
+            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+            IDT_DPL_3,
+            IDT_GATE_TYPE_INTERRUPT32
+    );
 
+    kernel.idt[0x81] = idt_encode_descriptor(
+            interrupt_handler_userspace_exit,
+            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
+            IDT_DPL_3,
+            IDT_GATE_TYPE_INTERRUPT32
+    );
+#endif
 
+    /* Flush the gdt and tss */
+    gdt_load(kernel.gdt,
+             sizeof kernel.gdt,
+             segment(SEGMENT_KERNEL_DATA, SEGMENT_GDT, 0),
+             segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0));
+    tss_load(segment(SEGMENT_TASK_STATE, SEGMENT_GDT, 0));
+    idt_load(kernel.idt, sizeof kernel.idt);
+
+    /* enable interrupts */
     __asm__ volatile("sti");
+
+    /* Finally go to ring 3 */
+    printf(str_attach("hello from kernel space!\n"));
+
+    pic_disable(); // temporary duct-tape 
+
+    ring3_mode(segment(SEGMENT_USER_DATA, SEGMENT_GDT, 3),
+               segment(SEGMENT_USER_CODE, SEGMENT_GDT, 3),
+               user_mode_code);
 }
 

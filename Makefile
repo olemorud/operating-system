@@ -25,7 +25,9 @@ ASM_SOURCES := $(shell find $(SOURCE_DIR) -name '*.S')
 OBJECTS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(ASM_SOURCES:.S=.o))
 DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
 
-CFLAGS := -MMD -ffreestanding -O1 -Wall -Wextra -Werror -std=c2x -I$(SOURCE_DIR)/include -no-pie -fstack-protector-strong
+CFLAGS := -MMD -ffreestanding -nostdlib -O1 -Wall -Wextra -Werror -std=c2x -I$(SOURCE_DIR)/include -no-pie -fstack-protector-strong -g3
+CFLAGS += -Wno-unused-function
+CFLAGS += -Wno-unused-variable
 ASFLAGS :=
 
 #$(info C_SOURCES is $(C_SOURCES))
@@ -34,7 +36,7 @@ ASFLAGS :=
 #$(info DEPENDS is $(DEPENDS))
 
 run: myos.iso
-	qemu-system-i386 -cdrom myos.iso
+	qemu-system-i386 -d int -no-reboot -cdrom myos.iso
 
 cross-compiler: cross-compiler-image/Dockerfile
 	podman build cross-compiler-image -t cc-i686

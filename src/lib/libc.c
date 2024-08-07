@@ -15,10 +15,10 @@
 __attribute__((noreturn))
 void panic(struct str s)
 {
-    terminal_clear();
+    //terminal_clear();
     terminal_set_color(VGA_COLOR_WHITE, VGA_COLOR_RED);
     terminal_write(s);
-    __asm__ volatile("hlt");
+    __asm__ volatile("cli; hlt");
     __builtin_unreachable();
 }
 

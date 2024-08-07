@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "types.h"
 
 #define GDT_LIMIT_MAX 0xFFFFF
 
@@ -46,23 +47,21 @@ enum gdt_access_flag : uint8_t {
 };
 
 enum gdt_flags : uint8_t {
-    GDT_RESERVED    = (1<<0),
-    GDT_LONG        = (1<<1),
-    GDT_SIZE        = (1<<2),
-    GDT_GRANULARITY = (1<<3),
+    GDT_RESERVED             = (1<<0),
+    GDT_LONG                 = (1<<1),
+    GDT_32BIT                = (1<<2),
+    GDT_GRANULARITY_PAGEWISE = (1<<3),
 };
-
-void gdt_set(uint16_t limit, const struct gdt_table_entry base[], uint32_t offset);
 
 struct gdt_table_entry gdt_encode_entry(struct gdt_entry_content content);
 
 // only compiles with O1 or higher ¯\_(ツ)_/¯, might have to make this a macro
-static inline void gdt_reload_granular(uint32_t code,
-									   uint32_t data,
-									   uint32_t extra_segment,
-									   uint32_t general_segment_1,
-									   uint32_t general_segment_2,
-									   uint32_t stack_segment)
+static inline void gdt_flush_granular(uint32_t code,
+                                      uint32_t data,
+                                      uint32_t extra_segment,
+                                      uint32_t general_segment_1,
+                                      uint32_t general_segment_2,
+                                      uint32_t stack_segment)
 {
     __asm__ volatile (
         // Far jump to reload the CS register
@@ -88,10 +87,19 @@ static inline void gdt_reload_granular(uint32_t code,
         : "ax" // Clobbered register
     );
 }
-
-static inline void gdt_reload(uint32_t data, uint32_t code)
+static inline void gdt_load(struct gdt_table_entry base[], uint16_t gdt_size, segment_t data, segment_t code)
 {
+    /* the lgdt instruction requires a packed alignment */
+    struct __attribute__((packed)) {
+        uint16_t size;
+        uint32_t base;
+    } gdt = {
+        .size = gdt_size,
+        .base = (uint32_t)base,
+    };
+
     __asm__ volatile (
+		"lgdt %[gdt]\n"
         // Far jump to reload the CS register
         "jmp %[cs], $reload_CS\n"
         "reload_CS:\n"
@@ -103,8 +111,9 @@ static inline void gdt_reload(uint32_t data, uint32_t code)
         "movw %%ax,  %%gs\n"
         "movw %%ax,  %%ss\n"
         : // No output operands
-        : [ds] "i"(data),
-		  [cs] "i"(code)
+        : [gdt] "m"(gdt),
+		  [ds] "i"(data),
+          [cs] "i"(code)
         : "ax" // Clobbered register
     );
 }

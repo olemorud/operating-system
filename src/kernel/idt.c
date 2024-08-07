@@ -3,17 +3,18 @@
 
 #include "idt.h"
 
-struct idt_gate_descriptor idt_encode_descriptor(uint32_t offset, uint16_t segment_selector, uint8_t ist, enum idt_flags type)
+struct idt_gate_descriptor idt_encode_descriptor(void* func, segment_t segment_selector, enum idt_dpl dpl, enum idt_flags type)
 {
     struct idt_gate_descriptor output = {0};
+
+	uint32_t offset = (uint32_t)func;
 
     output.offset_0 = offset & 0xFFFF;
     offset >>= 16;
     output.offset_1 = offset & 0xFFFF;
 
     output.segment_selector = segment_selector;
-    output.ist              = ist;
-    output.flags            = type | IDT_DPL_0 | IDT_PRESENT;
+    output.flags = type | dpl | IDT_PRESENT;
 
     return output;
 }
