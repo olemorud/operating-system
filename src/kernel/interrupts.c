@@ -1,4 +1,5 @@
 #include <stdint.h>
+
 #include "libc.h"
 #include "tty.h"
 #include "interrupts.h"
@@ -22,7 +23,7 @@ static void print_interrupt_frame(struct interrupt_frame* f)
            "Interrupt frame:\n"
            "================\n"
            "ip:    {x32}\n"
-           "cs:    {x32}\n"
+           "cs:    {x32} == {cs}\n"
            "flags: {x32}\n"
            "sp:    {x32}\n"
            "ss:    {x32}\n"),
@@ -35,14 +36,15 @@ static void print_interrupt_frame(struct interrupt_frame* f)
 
 /* not an interrupt/exception, but called by exception stubs */
 __attribute__((noreturn))
-static void panic_exception_not_implemented(struct interrupt_frame* frame, int exception_no)
+static void panic_exception_not_implemented(struct interrupt_frame* frame, int exception_no, uint32_t err)
 {
     terminal_set_color(VGA_COLOR_WHITE, VGA_COLOR_RED);
     printf(str_attach("non-implemented exception {i32} occurred\n"), exception_no);
 	struct str name = idt_desc_index_str[exception_no];
 	if (name.len != 0) {
-		printf(str_attach("exception name: {str})\n"), name);
+		printf(str_attach("exception name: {str}\n"), name, err);
 	}
+    printf(str_attach("error: {x32}\n"), err);
     if (frame != NULL) {
         print_interrupt_frame(frame);
     } else {
@@ -94,6 +96,7 @@ void exception_handler_div_by_zero(struct interrupt_frame* frame)
     panic(str_attach("div by zero occured :("));
 }
 
+#include "page.h"
 __attribute__((interrupt, noreturn))
 void exception_handler_page_fault(struct interrupt_frame* frame, int err)
 {
@@ -103,9 +106,41 @@ void exception_handler_page_fault(struct interrupt_frame* frame, int err)
     }
     terminal_set_color(VGA_COLOR_WHITE, VGA_COLOR_RED);
     printf(str_attach(
-        "page fault :(, err: 0x{x32}\n"),
-        err,
-        gdt_segment_index_str[err/8]);
+        "page fault :(, err: 0x{x32}: ["),
+        err);
+
+    /* page fault error bits */
+    enum {
+        present           = 1<<0,
+        write             = 1<<1,
+        user              = 1<<2,
+        reserved_write    = 1<<3,
+        instruction_fetch = 1<<4,
+        protection_key    = 1<<5,
+        shadow_stack      = 1<<6,
+        software_guard_ex = 1<<15,
+    };
+
+    const struct str error_names[] = {
+        [0]  = str_attach("present"),
+        [1]  = str_attach("write"),
+        [2]  = str_attach("user"),
+        [3]  = str_attach("reserved_write"),
+        [4]  = str_attach("instruction_fetch"),
+        [5]  = str_attach("protection_key"),
+        [6]  = str_attach("shadow_stack"),
+        [15] = str_attach("software_guard_ex"),
+    };
+
+    for (size_t i = 0; i < sizeof error_names / sizeof *error_names; i++) {
+        if ((err & (1<<i)) && error_names[i].data) {
+            printf(str_attach("{str} | "), error_names[i]);
+        }
+    } 
+    printf(str_attach("0]\n"));
+
+    print_interrupt_frame(frame);
+
     __asm__ volatile("cli; hlt");
     __builtin_unreachable();
 }
@@ -158,16 +193,54 @@ static void irq_stub(struct interrupt_frame* frame, int line)
 __attribute__((interrupt)) void irq_handler_0(struct interrupt_frame* frame)  { irq_stub(frame, 0); }
 
 /* IRQ1 - keyboard controller */
-#include "ps2-keyboard.h"
-__attribute__((interrupt)) void irq_handler_1(struct interrupt_frame* frame) 
+#include "keys.h"
+
+__attribute__((interrupt))
+void irq_handler_1(struct interrupt_frame* frame) 
 {
 	/* TODO: move keyboard logic to a separate compilation unit */
 	(void)frame;
+
+    for (struct kernel_hook* p = kernel.keypress_hooks;
+         p != NULL;
+         p = p->next)
+    {
+        // TODO
+        //proc_send(p->);
+    }
+
+#if 0
 	uint8_t key = inb(PIC_KEYBOARD);
-
 	bool released = key & KEY_RELEASED;
+	key &= ~KEY_RELEASED;
 
-	printf(str_attach("key {str}\n"), ps2_key_str[key]);
+	if (key == KEY_RIGHT_SHIFT || key == KEY_LEFT_SHIFT) {
+		shift = !released;
+        outb(PIC1_COMMAND, OCW2_EOI);
+        return;
+	}
+
+	if (key == KEY_E_RIGHT_CONTROL || key == KEY_LEFT_CONTROL) {
+		ctrl = !released;
+		(void)ctrl;
+        outb(PIC1_COMMAND, OCW2_EOI);
+        return;
+	}
+
+	if (!released) {
+		if (shift) {
+			key |= KEY_MODIFIER_SHIFT;
+		}
+		const char ch = ps2_key_char[key];
+		if (ch) {
+			terminal_putchar(ch);
+			kernel_input_buffer_push(ch);
+		} else {
+			printf(str_attach("[{str}]"), ps2_key_str[key]);
+		}
+	}
+#endif
+
 	outb(PIC1_COMMAND, OCW2_EOI);
 }
 
@@ -191,12 +264,13 @@ __attribute__((interrupt)) void irq_handler_15(struct interrupt_frame* frame) { 
  * Exception Stubs
  * ===============
  */
+#define EXCEPTION_STUB(n) exception_stub_##n
 
-#define DEFINE_EXCEPTION_STUB(n)                          \
-    __attribute__((interrupt, noreturn))                  \
-    void EXCEPTION_STUB(n)(struct interrupt_frame* frame) \
-    {                                                     \
-        panic_exception_not_implemented(frame, n);        \
+#define DEFINE_EXCEPTION_STUB(n)                                        \
+    __attribute__((interrupt, noreturn))                                \
+    void EXCEPTION_STUB(n)(struct interrupt_frame* frame, uint32_t err) \
+    {                                                                   \
+        panic_exception_not_implemented(frame, n, err);                 \
     }
 
 DEFINE_EXCEPTION_STUB(0)

@@ -2,7 +2,6 @@
 
 #include <stddef.h>
 #include "str.h"
-#include "tty.h"
 
 __attribute__((noreturn))
 void panic(struct str s);

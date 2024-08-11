@@ -50,6 +50,7 @@ SECTIONS
 	.data BLOCK(4K) : ALIGN(4K)
 	{
 		*(.data)
+        kernel_data_end = .;
 	}
 
 	/* Read-write data (uninitialized) and stack */
@@ -57,6 +58,8 @@ SECTIONS
 	{
 		*(COMMON)
 		*(.bss)
+
+        kernel_memory_end = .;
 	}
 
 	/* The compiler may produce other sections, by default it will put them in

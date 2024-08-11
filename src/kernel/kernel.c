@@ -10,16 +10,23 @@
 #include "kernel_state.h"
 #include "pic.h"
 
+#include "page.h"
+
 // Future user-space
 #include "libc.h"
 #include "tty.h"
 #include "str.h"
+#include "bitmap.h"
+
+uint32_t page_directory[1024] __attribute__((aligned(4096)));
+uint32_t page_table[1024]     __attribute__((aligned(4096)));
+_Static_assert(((uint32_t)page_table     & 0xfff) == 0);
+_Static_assert(((uint32_t)page_directory & 0xfff) == 0);
 
 static void user_mode_code(void*)
 {
     printf(str_attach("hello from user-space before interrupt :)\n"));
-    //__asm__ volatile ("int $0x80");
-    //while (1) /* busy loop */;
+    __asm__ volatile ("int $0x80");
 
 #if 0
     printf(str_attach("hello from user-space before exception :)\n"));
@@ -47,10 +54,10 @@ static void ring3_mode(segment_t udata_segment, segment_t ucode_segment, func_t 
         "push %%ax\n"
 
         "mov %%esp, %%eax\n"
-        "push %%eax\n"       // esp
-        "pushf\n"            // eflags
+        "push %%eax\n"
+        "pushf\n"
         "push %[ucode]\n"
-        "push %[callback]\n" // instruction address to return to
+        "push %[callback]\n"
         "iret"
         :
         : [udata]    "i"(udata_segment),
@@ -161,6 +168,7 @@ void kernel_main(void)
     kernel.idt[IDT_DESC_EXCEPTION_DIVISION_ERROR]           = mtrap(exception_handler_div_by_zero);
     kernel.idt[IDT_DESC_EXCEPTION_DOUBLE_FAULT]             = mtrap(exception_handler_double_fault);
     kernel.idt[IDT_DESC_EXCEPTION_GENERAL_PROTECTION_FAULT] = mtrap(exception_handler_general_protection_fault);
+    kernel.idt[IDT_DESC_EXCEPTION_PAGE_FAULT]               = mtrap(exception_handler_page_fault);
 
     /* IRQs */
 	kernel.idt[IDT_DESC_PIC1 + 0] = mint(irq_handler_0);
@@ -200,11 +208,42 @@ void kernel_main(void)
     /* enable interrupts */
     __asm__ volatile("sti");
 
-    printf(str_attach("hello from kernel space!\n"));
+    printf(str_attach("setting up paging...\n"));
 
+    /**
+     * Paging setup
+     * ============
+     * We align by 1<<12 because page directory and page table entries store
+     * addresses from bit 12-31
+     *
+     * For now give user access to pages to avoid a page fault 
+     */
+    for (size_t i = 0; i < sizeof page_table / sizeof *page_table; i++) {
+        page_directory[i] = PDE_WRITE;
+    }
+
+    for (size_t i = 0; i < sizeof page_table / sizeof *page_table; i++) {
+        page_table[i] = PTE_ADDRESS(i) | PTE_WRITE | PTE_PRESENT | PTE_USER;
+    }
+
+    page_directory[0] = ((uint32_t)page_table) | PDE_WRITE | PDE_PRESENT | PDE_USER_ACCESS;
+
+    cr3_set((uint32_t)page_directory);
+    cr0_flags_set(CR0_PAGING);
+
+    printf(str_attach("done!\n"));
+
+    printf(str_attach("starting code in ring 3...\n"));
     /* Finally go to ring 3 */
     ring3_mode(segment(SEGMENT_USER_DATA, SEGMENT_GDT, 3),
                segment(SEGMENT_USER_CODE, SEGMENT_GDT, 3),
                user_mode_code);
+
+    printf(str_attach("back to kernel mode...\n"));
+
+    while (1)
+        /* busy loop */;
+
+    __asm__ volatile ("hlt");
 }
 

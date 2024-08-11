@@ -11,6 +11,14 @@ typedef unsigned long long int uword_t;
 typedef unsigned int uword_t;
 #endif
 
+struct __attribute__((packed)) interrupt_frame {
+    uword_t ip;
+    uword_t cs;
+    uword_t flags;
+    uword_t sp;
+    uword_t ss;
+};
+
 /* segment selectors identifies segments either in the gdt or the ldt */
 typedef uint16_t segment_t;
 
@@ -23,5 +31,3 @@ static inline segment_t segment(uint16_t index, enum segment_ti ti, uint16_t rpl
 {
 	return (index << 3) | ((ti & 0xF) << 1) | (rpl & 0xFF);
 }
-
-

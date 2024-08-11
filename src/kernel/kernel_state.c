@@ -3,6 +3,8 @@
 
 #include "kernel_state.h"
 
+struct kernel_state kernel = { 0 };
+
 const struct str gdt_segment_index_str[SEGMENT_COUNT] = {
     [SEGMENT_NULL       ] = str_attach("SEGMENT_NULL"),
     [SEGMENT_KERNEL_CODE] = str_attach("SEGMENT_KERNEL_CODE"),
@@ -42,4 +44,3 @@ const struct str idt_desc_index_str[IDT_DESC_COUNT] = {
     [IDT_DESC_INTERRUPT_SYSCALL                    ] = str_attach("IDT_DESC_INTERRUPT_SYSCALL"),
 };
 
-struct kernel_state kernel = { 0 };

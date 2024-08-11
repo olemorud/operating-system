@@ -1,13 +1,12 @@
 
 .SUFFIXES:
 
-.PHONY: all clean
+.PHONY: all clean test tests
 
 all: myos.iso
 
 SOURCE_DIR := src
 BUILD_DIR  := build
-
 
 CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch" \
                             --workdir="/scratch"         \
@@ -16,17 +15,23 @@ CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch" \
                             -t                           \
                             cc-i686:latest
 
+QEMU	   := qemu-system-i386
+QEMU_FLAGS := -d int -no-reboot
+
 CC := $(CONTAINER_CMD) i686-elf-gcc
 LD := $(CONTAINER_CMD) i686-elf-ld
 AS := $(CONTAINER_CMD) i686-elf-as
 AR := $(CONTAINER_CMD) i686-elf-ar
 
-C_SOURCES := $(shell find $(SOURCE_DIR) ! -name 'test_*' -name '*.c')
+C_SOURCES   := $(shell find $(SOURCE_DIR) ! -name '*_test*' -name '*.c')
 ASM_SOURCES := $(shell find $(SOURCE_DIR) -name '*.S')
-OBJECTS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(ASM_SOURCES:.S=.o))
-DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
+OBJECTS     := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(ASM_SOURCES:.S=.o))
+DEPENDS     := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
 
-CFLAGS := -MMD -ffreestanding -nostdlib -O1 -Wall -Wextra -Werror -std=c2x -I$(SOURCE_DIR)/include -no-pie -fstack-protector-strong -g3
+CFLAGS := -ffreestanding -nostdlib -std=c2x -MMD -I$(SOURCE_DIR)/lib/include -I$(SOURCE_DIR) -no-pie 
+CFLAGS += -O1 -g3
+CFLAGS += -Wall -Wextra -Werror
+CFLAGS += -fstack-protector-strong -g3
 CFLAGS += -Wno-unused-function
 CFLAGS += -Wno-unused-variable
 ASFLAGS :=
@@ -37,7 +42,7 @@ ASFLAGS :=
 #$(info DEPENDS is $(DEPENDS))
 
 run: myos.iso
-	qemu-system-i386 -d int -no-reboot -cdrom myos.iso
+	$(QEMU) $(QEMU_FLAGS) -cdrom myos.iso
 
 cross-compiler: cross-compiler-image/Dockerfile
 	podman build cross-compiler-image -t cc-i686
@@ -74,21 +79,23 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.S Makefile
 #      TESTS      #
 ###################
 
-TEST_SOURCE_DIR   := $(SOURCE_DIR)/test
-TEST_BUILD_DIR   := $(BUILD_DIR)/test
+TEST_BUILD_DIR  := $(BUILD_DIR)/tests
 
-TEST_SOURCES := $(shell find $(TEST_SOURCE_DIR) -name 'test_*.c')
-TEST_DEPENDS := $(patsubst $(TEST_SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=.d))
-TEST_OUTPUT  := $(patsubst $(TEST_SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=))
+#TEST_SOURCES := $(shell find $(SOURCE_DIR) -name '*_test.c')
+#TEST_DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=.d))
+#TEST_OUTPUT  := $(patsubst $(SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=))
 
-$(info TEST_SOURCES is $(TEST_SOURCES))
-$(info TEST_OUTPUT is $(TEST_OUTPUT))
 
 tests: $(TEST_OUTPUT)
+	$(info TEST_SOURCES is $(TEST_SOURCES))
+	$(info TEST_DEPENDS is $(TEST_DEPENDS))
+	$(info TEST_OUTPUT is $(TEST_OUTPUT))
+test: tests
 
 -include $(TEST_DEPENDS)
 
-$(TEST_BUILD_DIR)/test_%: $(TEST_SOURCE_DIR)/test_%.c $(SOURCE_DIR)/lib/%.c | Makefile
+$(TEST_BUILD_DIR)/%_test: $(SOURCE_DIR)/%.c $(SOURCE_DIR)/%_test.c | Makefile
 	@mkdir -p $(@D)
-	gcc -O1 -fsanitize=address,undefined -Wall -Wextra -Werror -g3 -std=c2x -D_FORTIFY_SOURCE=2 -I$(SOURCE_DIR)/include -o $@ $^
+	gcc -O1 -fsanitize=address,undefined -Wall -Wextra -Werror -g3 -std=c2x -D_FORTIFY_SOURCE=2 -I$(SOURCE_DIR)/lib/include -o $@ $^
+	./$@
 

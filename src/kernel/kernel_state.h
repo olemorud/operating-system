@@ -6,8 +6,12 @@
 #include "idt.h"
 #include "gdt.h"
 
+/* defined in linker.ld */
+extern char kernel_memory_end[];
+
 /*
  * Constants for the GDT
+ * =====================
  * */
 enum gdt_segment_index : size_t {
     SEGMENT_NULL,
@@ -22,11 +26,13 @@ extern const struct str gdt_segment_index_str[SEGMENT_COUNT]; // reverse lookup 
 
 /**
  * Constants for the TSS
+ * =====================
  */
 constexpr size_t KERNEL_STACK_SIZE = 1024;
 
 /*
  * Constants for IDT descriptors
+ * =============================
  * */
 static constexpr size_t IDT_EXCEPTION_COUNT = 32;
 static constexpr size_t IDT_IRQ_MASTER_COUNT = 8;
@@ -66,6 +72,7 @@ enum idt_desc_index : size_t {
     IDT_DESC_PIC1 = 32,
     IDT_DESC_PIC2 = IDT_DESC_PIC1 + 8,
 
+    /* Software Interrupts */
     IDT_DESC_INTERRUPT_SYSCALL = 128,
 
     IDT_DESC_COUNT = 256,
@@ -73,12 +80,43 @@ enum idt_desc_index : size_t {
 extern const struct str idt_desc_index_str[IDT_DESC_COUNT]; // reverse lookup enum -> str
 
 /**
+ * hook objects (placeholder for files I guess)
+ * ====================
+ * Processes can subscribe to objects and will be signaled when the object is
+ * ready.
+ */
+struct kernel_hook {
+    struct kernel_hook* next;
+    size_t process;
+};
+
+/**
+ * The process object
+ * ==================
+ */
+constexpr size_t PROC_MAX = 1024;
+
+struct kernel_process {
+    struct interrupt_frame frame;
+};
+
+/**
  * The global kernel state object
+ * ==============================
  */
 struct kernel_state {
-    struct tss tss;
-    struct gdt_table_entry gdt[SEGMENT_COUNT];
+    struct tss                 tss;
+
+    struct gdt_table_entry     gdt[SEGMENT_COUNT];
+
     struct idt_gate_descriptor idt[IDT_DESC_COUNT];
-	int nested_exception_counter;
+
+    struct kernel_process      processes[PROC_MAX];
+    size_t                     process_count;
+
+    int                        nested_exception_counter;
+
+    struct kernel_hook*        keypress_hooks;
 };
 extern struct kernel_state kernel;
+

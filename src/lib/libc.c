@@ -5,7 +5,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "tty.h"
+#include "kernel/tty.h"
 #include "str.h"
 
 /*

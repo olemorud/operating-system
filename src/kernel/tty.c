@@ -62,6 +62,9 @@ void terminal_scroll(int n)
 
 void terminal_putchar(int c)
 {
+	/* clear the cursor marker */
+	terminal_putentryat(' ', t.color, t.column, t.row);
+
     // TODO: implement other control characters
     switch (c) {
 
@@ -83,6 +86,9 @@ void terminal_putchar(int c)
     if (t.row == VGA_HEIGHT) {
         terminal_scroll(1);
     }
+
+	/* set the cursor marker */
+	terminal_putentryat(' ', vga_color(VGA_COLOR_BLACK, VGA_COLOR_LIGHT_GREY), t.column, t.row);
 }
 
 void terminal_write(struct str str)

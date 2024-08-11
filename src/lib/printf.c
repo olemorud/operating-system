@@ -1,8 +1,10 @@
 
 #include <stdarg.h>
 #include <limits.h>
+#include <stdint.h>
 
 #include "libc.h"
+#include "kernel/tty.h"
 
 typedef int (*printf_function)(struct printf_state* s, void* data);
 
@@ -132,6 +134,42 @@ static int print_char(struct printf_state* s)
     }
 }
 
+static int print_cs(struct printf_state* s)
+{
+    int n;
+    int sum = 0;
+
+    const uint8_t cs = va_arg(s->ap, uint32_t);
+
+    const struct str cs_bit_names[] = {
+        [0] = str_attach("ACCESSED"),
+        [1] = str_attach("RW"),
+        [2] = str_attach("DC"),
+        [3] = str_attach("EXEC"),
+        [4] = str_attach("DESCRIPTOR"),
+        [7] = str_attach("PRESENT"),
+    };
+        
+    for (size_t i = 0; i < sizeof cs_bit_names / sizeof *cs_bit_names; i++) {
+        if (cs & (1<<i) && cs_bit_names[i].data) {
+            n = printf(str_attach("{str} | "), cs_bit_names[i]);
+            if (n == -1) {
+                return -1;
+            }
+            sum += n;
+        }
+    }
+
+    unsigned int ring = (cs>>5) & 0b11;
+    n = printf(str_attach("DPL({uint})"), ring);
+    if (n == -1) {
+        return -1;
+    }
+    sum += n;
+
+    return sum;
+}
+
 static int parse_format_cmd(struct printf_state* s)
 {
     int c;
@@ -173,6 +211,9 @@ static int parse_format_cmd(struct printf_state* s)
 
         case 'char':
             return print_char(s);
+
+        case 'cs':
+            return print_cs(s);
 
         default:
             return -1;
