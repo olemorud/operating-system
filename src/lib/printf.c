@@ -77,7 +77,7 @@ static int print_i32(struct printf_state* s, int padding, char pad_char)
 {
     padding  = padding ? padding : 0;
     pad_char = pad_char ? pad_char : ' ';
-    long n = va_arg(s->ap, int32_t);
+    uint32_t n = va_arg(s->ap, int32_t);
     return print_long(n, str_attach("0123456789"), true, padding, pad_char);
 }
 
@@ -85,7 +85,7 @@ static int print_u32(struct printf_state* s, int padding, char pad_char)
 {
     padding  = padding ? padding : 0;
     pad_char = pad_char ? pad_char : ' ';
-    unsigned long n = va_arg(s->ap, uint32_t);
+    uint32_t n = va_arg(s->ap, uint32_t);
     return print_long(n, str_attach("0123456789"), false, padding, pad_char);
 }
 
@@ -93,7 +93,7 @@ static int print_x32(struct printf_state* s, int padding, char pad_char)
 {
     padding = padding ? padding : 0;
     pad_char = pad_char ? pad_char : '0';
-    unsigned long n = va_arg(s->ap, uint32_t);
+    uint32_t n = va_arg(s->ap, uint32_t);
     struct str alphabet = str_attach("0123456789abcdef");
     return print_long(n, alphabet, false, padding, pad_char);
 }
@@ -102,7 +102,7 @@ static int print_b32(struct printf_state* s, int padding, char pad_char)
 {
     padding = padding ? padding : 32;
     pad_char = pad_char ? pad_char : '0';
-    unsigned long n = va_arg(s->ap, uint32_t);
+    uint32_t n = va_arg(s->ap, uint32_t);
     struct str alphabet = str_attach("01");
     return print_long(n, alphabet, false, padding, pad_char);
 }
@@ -119,7 +119,19 @@ static int print_str(struct printf_state* s, int padding, char pad_char)
     return str.len;
 }
 
-#pragma GCC diagnostic ignored "-Wmultichar"
+static int print_char(struct printf_state* s)
+{
+    // char is promoted to int when passed through va_arg
+    const int ch = va_arg(s->ap, int);
+
+    if (ch >= 32 && ch < 127) {
+        terminal_putchar(ch);
+        return 1;
+    } else {
+        return print_long(ch, str_attach("0123456789abcdef"), false, 0, 0);
+    }
+}
+
 static int parse_format_cmd(struct printf_state* s)
 {
     int c;
@@ -137,16 +149,21 @@ static int parse_format_cmd(struct printf_state* s)
     if (c == EOF)
         return -1;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmultichar"
     switch (cmd) {
         // 16 bit types are promoted to 32 bit by va_arg(...) anyways
+        case 'int':
         case 'i16':
         case 'i32':
             return print_i32(s, pad, pad_char);
 
+        case 'uint':
         case 'u16':
         case 'u32':
             return print_u32(s, pad, pad_char);
 
+        case 'hex':
         case 'x16':
         case 'x32':
             return print_x32(s, pad, pad_char);
@@ -154,9 +171,13 @@ static int parse_format_cmd(struct printf_state* s)
         case 'str':
             return print_str(s, pad, pad_char);
 
+        case 'char':
+            return print_char(s);
+
         default:
             return -1;
     }
+#pragma GCC diagnostic pop
 }
 
 int printf(struct str format, ...)

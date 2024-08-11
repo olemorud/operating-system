@@ -8,6 +8,7 @@ all: myos.iso
 SOURCE_DIR := src
 BUILD_DIR  := build
 
+
 CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch" \
                             --workdir="/scratch"         \
                             --network=none               \
@@ -20,7 +21,7 @@ LD := $(CONTAINER_CMD) i686-elf-ld
 AS := $(CONTAINER_CMD) i686-elf-as
 AR := $(CONTAINER_CMD) i686-elf-ar
 
-C_SOURCES := $(shell find $(SOURCE_DIR) -name '*.c')
+C_SOURCES := $(shell find $(SOURCE_DIR) ! -name 'test_*' -name '*.c')
 ASM_SOURCES := $(shell find $(SOURCE_DIR) -name '*.S')
 OBJECTS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(ASM_SOURCES:.S=.o))
 DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
@@ -60,7 +61,6 @@ $(BUILD_DIR)/kernel/interrupts.o: $(SOURCE_DIR)/kernel/interrupts.c Makefile
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) -mgeneral-regs-only -mno-red-zone $< -o $@
 
-
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c Makefile
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -68,4 +68,27 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c Makefile
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.S Makefile
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@
+
+
+###################
+#      TESTS      #
+###################
+
+TEST_SOURCE_DIR   := $(SOURCE_DIR)/test
+TEST_BUILD_DIR   := $(BUILD_DIR)/test
+
+TEST_SOURCES := $(shell find $(TEST_SOURCE_DIR) -name 'test_*.c')
+TEST_DEPENDS := $(patsubst $(TEST_SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=.d))
+TEST_OUTPUT  := $(patsubst $(TEST_SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=))
+
+$(info TEST_SOURCES is $(TEST_SOURCES))
+$(info TEST_OUTPUT is $(TEST_OUTPUT))
+
+tests: $(TEST_OUTPUT)
+
+-include $(TEST_DEPENDS)
+
+$(TEST_BUILD_DIR)/test_%: $(TEST_SOURCE_DIR)/test_%.c $(SOURCE_DIR)/lib/%.c | Makefile
+	@mkdir -p $(@D)
+	gcc -O1 -fsanitize=address,undefined -Wall -Wextra -Werror -g3 -std=c2x -D_FORTIFY_SOURCE=2 -I$(SOURCE_DIR)/include -o $@ $^
 

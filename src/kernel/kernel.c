@@ -8,29 +8,17 @@
 #include "interrupts.h"
 #include "types.h"
 #include "kernel_state.h"
+#include "pic.h"
 
 // Future user-space
 #include "libc.h"
 #include "tty.h"
 #include "str.h"
 
-static void pic_disable()
-{
-    __asm__ volatile ("outb %0, %1"
-            :
-            : "a"((uint8_t)0xff), "Nd"((uint16_t)0x21)
-            : "memory");
-    __asm__ volatile ("outb %0, %1"
-            :
-            : "a"((uint8_t)0xff), "Nd"((uint16_t)0xA1)
-            : "memory");
-}
-
 static void user_mode_code(void*)
 {
     printf(str_attach("hello from user-space before interrupt :)\n"));
-    __asm__ volatile ("int $0x80");
-    __asm__ volatile ("int $0x81");
+    //__asm__ volatile ("int $0x80");
     //while (1) /* busy loop */;
 
 #if 0
@@ -82,8 +70,9 @@ void kernel_main(void)
 {
     __asm__ volatile("cli");
 
-    _Static_assert(sizeof(kernel.gdt) == 0x30);
 
+    /* Set up the GDT
+	 * ============== */
     kernel.gdt[SEGMENT_NULL] = gdt_encode_entry((struct gdt_entry_content){0});
 
     /* kernel */
@@ -140,86 +129,80 @@ void kernel_main(void)
                                   | GDT_ACCESS_PRESENT,
                      .flags = 0});
 
-    /* Setup the TSS */
-    memset(&kernel.tss, 0, sizeof kernel.tss);
-    kernel.tss.ss0 = segment(SEGMENT_KERNEL_DATA, SEGMENT_GDT, 0);
-#if 1
-    static uint8_t kernel_stack[1024];
-    kernel.tss.esp0 = (uint32_t)kernel_stack;
-#else
-    kernel.tss.esp0 = 0;
-#endif
-
-#if 1
-    /* Setup the IDT */
-    for (size_t i = 0; i < 32; i++) {
-        kernel.idt[i] = idt_encode_descriptor(
-               exception_default,
-               segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-               IDT_DPL_3,
-               IDT_GATE_TYPE_TRAP32);
-    }
-    for (size_t i = 32; i < IDT_COUNT; i++) {
-        kernel.idt[i] = idt_encode_descriptor(
-               interrupt_default,
-               segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-               IDT_DPL_3,
-               IDT_GATE_TYPE_INTERRUPT32);
-    }
-
-    kernel.idt[0x0] = idt_encode_descriptor(
-            exception_handler_div_by_zero,
-            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-            IDT_DPL_3,
-            IDT_GATE_TYPE_TRAP32
-    );
-
-    kernel.idt[0x8] = idt_encode_descriptor(
-            exception_handler_double_fault,
-            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-            IDT_DPL_3,
-            IDT_GATE_TYPE_TRAP32
-    );
-
-    kernel.idt[0xD] = idt_encode_descriptor(
-            exception_handler_general_protection_fault,
-            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-            IDT_DPL_3,
-            IDT_GATE_TYPE_TRAP32
-    );
-
-    // Interrupts
-    kernel.idt[0x80] = idt_encode_descriptor(
-            interrupt_handler_1,
-            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-            IDT_DPL_3,
-            IDT_GATE_TYPE_INTERRUPT32
-    );
-
-    kernel.idt[0x81] = idt_encode_descriptor(
-            interrupt_handler_userspace_exit,
-            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0),
-            IDT_DPL_3,
-            IDT_GATE_TYPE_INTERRUPT32
-    );
-#endif
-
-    /* Flush the gdt and tss */
     gdt_load(kernel.gdt,
              sizeof kernel.gdt,
              segment(SEGMENT_KERNEL_DATA, SEGMENT_GDT, 0),
              segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0));
+
+    /* 
+	 * Setup the TSS
+	 * ============= */
+	static uint8_t kernel_stack[KERNEL_STACK_SIZE];
+    kernel.tss.ss0 = segment(SEGMENT_KERNEL_DATA, SEGMENT_GDT, 0);
+    kernel.tss.esp0 = (uint32_t)kernel_stack;
     tss_load(segment(SEGMENT_TASK_STATE, SEGMENT_GDT, 0));
+
+    /**
+	 * Setup the IDT
+	 * ============= */
+#define m_idt_default(func, type) \
+    idt_encode_descriptor( \
+            func, \
+            segment(SEGMENT_KERNEL_CODE, SEGMENT_GDT, 0), \
+            IDT_DPL_3, \
+            type)
+
+#define mtrap(func) m_idt_default(func, IDT_GATE_TYPE_TRAP32);
+#define mint(func)  m_idt_default(func, IDT_GATE_TYPE_INTERRUPT32);
+
+	idt_init_stubs(kernel.idt);
+
+    /* Exceptions */
+    kernel.idt[IDT_DESC_EXCEPTION_DIVISION_ERROR]           = mtrap(exception_handler_div_by_zero);
+    kernel.idt[IDT_DESC_EXCEPTION_DOUBLE_FAULT]             = mtrap(exception_handler_double_fault);
+    kernel.idt[IDT_DESC_EXCEPTION_GENERAL_PROTECTION_FAULT] = mtrap(exception_handler_general_protection_fault);
+
+    /* IRQs */
+	kernel.idt[IDT_DESC_PIC1 + 0] = mint(irq_handler_0);
+	kernel.idt[IDT_DESC_PIC1 + 1] = mint(irq_handler_1);
+	kernel.idt[IDT_DESC_PIC1 + 2] = mint(irq_handler_2);
+	kernel.idt[IDT_DESC_PIC1 + 3] = mint(irq_handler_3);
+	kernel.idt[IDT_DESC_PIC1 + 4] = mint(irq_handler_4);
+	kernel.idt[IDT_DESC_PIC1 + 5] = mint(irq_handler_5);
+	kernel.idt[IDT_DESC_PIC1 + 6] = mint(irq_handler_6);
+	kernel.idt[IDT_DESC_PIC1 + 7] = mint(irq_handler_7);
+
+	kernel.idt[IDT_DESC_PIC2 + 0] = mint(irq_handler_8);
+	kernel.idt[IDT_DESC_PIC2 + 1] = mint(irq_handler_9);
+	kernel.idt[IDT_DESC_PIC2 + 2] = mint(irq_handler_10);
+	kernel.idt[IDT_DESC_PIC2 + 3] = mint(irq_handler_11);
+	kernel.idt[IDT_DESC_PIC2 + 4] = mint(irq_handler_12);
+	kernel.idt[IDT_DESC_PIC2 + 5] = mint(irq_handler_13);
+	kernel.idt[IDT_DESC_PIC2 + 6] = mint(irq_handler_14);
+	kernel.idt[IDT_DESC_PIC2 + 7] = mint(irq_handler_15);
+    
+    /* Interrupts */
+    kernel.idt[IDT_DESC_INTERRUPT_SYSCALL] = mint(interrupt_handler_1);
+#undef mtrap
+#undef mint
+#undef m_idt_default
+
     idt_load(kernel.idt, sizeof kernel.idt);
+
+	/**
+	 * PIC setup
+	 * =========
+	 */
+
+    //irq_set_mask(0xff); /* Disable all IRQs */
+    pic8259_remap(IDT_DESC_PIC1, IDT_DESC_PIC2);
 
     /* enable interrupts */
     __asm__ volatile("sti");
 
-    /* Finally go to ring 3 */
     printf(str_attach("hello from kernel space!\n"));
 
-    pic_disable(); // temporary duct-tape 
-
+    /* Finally go to ring 3 */
     ring3_mode(segment(SEGMENT_USER_DATA, SEGMENT_GDT, 3),
                segment(SEGMENT_USER_CODE, SEGMENT_GDT, 3),
                user_mode_code);
