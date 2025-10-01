@@ -70,7 +70,24 @@ enum idt_desc_index : size_t {
 
     /* IRQ offsets */
     IDT_DESC_PIC1 = 32,
-    IDT_DESC_PIC2 = IDT_DESC_PIC1 + 8,
+    IDT_DESC_TIMER       = IDT_DESC_PIC1 + 0,
+    IDT_DESC_KEYBOARD    = IDT_DESC_PIC1 + 1,
+    IDT_DESC_CASCADE     = IDT_DESC_PIC1 + 2,
+    IDT_DESC_COM2        = IDT_DESC_PIC1 + 3,
+    IDT_DESC_COM1        = IDT_DESC_PIC1 + 4,
+    IDT_DESC_LPT2        = IDT_DESC_PIC1 + 5,
+    IDT_DESC_FLOPPY_DISK = IDT_DESC_PIC1 + 6,
+    IDT_DESC_SPURIOUS    = IDT_DESC_PIC1 + 7,
+
+    IDT_DESC_PIC2 = 40,
+    IDT_DESC_CMOS      = IDT_DESC_PIC2 + 0,
+    IDT_DESC_FREE1     = IDT_DESC_PIC2 + 1,
+    IDT_DESC_FREE2     = IDT_DESC_PIC2 + 2,
+    IDT_DESC_FREE3     = IDT_DESC_PIC2 + 3,
+    IDT_DESC_PS2_MOUSE = IDT_DESC_PIC2 + 4,
+    IDT_DESC_FPU       = IDT_DESC_PIC2 + 5,
+    IDT_DESC_ATA1      = IDT_DESC_PIC2 + 6,
+    IDT_DESC_ATA2      = IDT_DESC_PIC2 + 7,
 
     /* Software Interrupts */
     IDT_DESC_INTERRUPT_SYSCALL = 128,

@@ -5,8 +5,14 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <limits.h>
 #include "kernel/tty.h"
 #include "str.h"
+
+/*
+ * Math functions
+ * ==============
+ */
 
 /*
  * Error handling

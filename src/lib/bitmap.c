@@ -2,7 +2,7 @@
 #include "bitmap.h"
 #include <limits.h>
 
-static constexpr struct bitmap B = {0};
+static constexpr struct bitmap B = {0}; /* <-- just used on the line below */
 static constexpr size_t bits_per_index = sizeof (B.data[0]) * CHAR_BIT;
 
 #define mask(n) ((1<<(n))-1)
@@ -14,6 +14,19 @@ _Static_assert(mask(3) == 0b0111);
 static inline int trailing_zeroes(int n) 
 {
     return __builtin_ctz(n);
+}
+
+int bitmap_find(const struct bitmap* bitmap, int val)
+{
+    for (size_t i = 0; i < bitmap->bit_count / bits_per_index; i++) {
+        auto x = val == 0
+            ? ~bitmap->data[i]
+            : bitmap->data[i];
+        if (x != 0) {
+            return i * bits_per_index + trailing_zeroes(x);
+        }
+    }
+    return -1;
 }
 
 int bitmap_set_range(struct bitmap* bitmap, size_t begin, size_t end)

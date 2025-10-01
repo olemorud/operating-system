@@ -17,16 +17,15 @@ struct __attribute__((packed)) interrupt_frame {
     uword_t ss;
 };
 
-static void print_interrupt_frame(struct interrupt_frame* f)
+void print_interrupt_frame(struct interrupt_frame* f)
 {
     printf(str_attach(
            "Interrupt frame:\n"
-           "================\n"
-           "ip:    {x32}\n"
-           "cs:    {x32} == {cs}\n"
-           "flags: {x32}\n"
-           "sp:    {x32}\n"
-           "ss:    {x32}\n"),
+           "  - ip:    {x32}\n"
+           "  - cs:    {x32} ({cs})\n"
+           "  - flags: {x32}\n"
+           "  - sp:    {x32}\n"
+           "  - ss:    {x32}\n"),
            f->ip,
            f->cs,
            f->flags,
@@ -106,38 +105,51 @@ void exception_handler_page_fault(struct interrupt_frame* frame, int err)
     }
     terminal_set_color(VGA_COLOR_WHITE, VGA_COLOR_RED);
     printf(str_attach(
-        "page fault :(, err: 0x{x32}: ["),
+        "=============\n"
+        "PAGE FAULT :(\n"
+        "=============\n"
+        "Error: 0x{x32}: \n"),
         err);
 
     /* page fault error bits */
     enum {
-        present           = 1<<0,
-        write             = 1<<1,
-        user              = 1<<2,
-        reserved_write    = 1<<3,
-        instruction_fetch = 1<<4,
-        protection_key    = 1<<5,
-        shadow_stack      = 1<<6,
-        software_guard_ex = 1<<15,
+        present           = 0,
+        write             = 1,
+        user              = 2,
+        reserved_write    = 3,
+        instruction_fetch = 4,
+        protection_key    = 5,
+        shadow_stack      = 6,
+        software_guard_ex = 15,
+
+        page_fault_error_count
     };
 
-    const struct str error_names[] = {
-        [0]  = str_attach("present"),
-        [1]  = str_attach("write"),
-        [2]  = str_attach("user"),
-        [3]  = str_attach("reserved_write"),
-        [4]  = str_attach("instruction_fetch"),
-        [5]  = str_attach("protection_key"),
-        [6]  = str_attach("shadow_stack"),
-        [15] = str_attach("software_guard_ex"),
+    static const struct str error_flag_str[page_fault_error_count] = {
+        [present]           = str_attach("Caused by a page-protection violation"),
+        [write]             = str_attach("Caused by a write access"),
+        [user]              = str_attach("Caused while CPL == 3 (not neccessarily a privilige escalation)"),
+        [reserved_write]    = str_attach("One or more page directory entries contain reserved bits which are set to 1"),
+        [instruction_fetch] = str_attach("Caused by an instruction fetch"),
+        [protection_key]    = str_attach("Caused by a protection-key violation"),
+        [shadow_stack]      = str_attach("Caused by a shadow stack access"),
+        [software_guard_ex] = str_attach("Caused by an SGX violation"),
     };
 
-    for (size_t i = 0; i < sizeof error_names / sizeof *error_names; i++) {
-        if ((err & (1<<i)) && error_names[i].data) {
-            printf(str_attach("{str} | "), error_names[i]);
+    static const struct str error_flag_zero_str[page_fault_error_count] = {
+        [present] = str_attach("Caused by a non-present page"),
+        [write]   = str_attach("Caused by a read access"),
+        [user]    = str_attach("Caused while CPL != 3"),
+    };
+
+    for (size_t i = 0; i < page_fault_error_count; i++) {
+        if ((err & (1<<i)) && error_flag_str[i].data) {
+            printf(str_attach("  - {str}\n"), error_flag_str[i]);
+        } else if (error_flag_zero_str[i].data) {
+            printf(str_attach("  - {str}\n"), error_flag_zero_str[i]);
         }
     } 
-    printf(str_attach("0]\n"));
+    printf(str_attach("\n"));
 
     print_interrupt_frame(frame);
 
@@ -158,18 +170,6 @@ void interrupt_default(struct interrupt_frame* frame)
     (void)frame;
     panic(str_attach("non-implemented interrupt invoked"));
     
-    kernel.nested_exception_counter = 0;
-}
-
-__attribute__((interrupt))
-void interrupt_handler_1(struct interrupt_frame* frame)
-{
-    if (kernel.nested_exception_counter++ > EXCEPTION_DEPTH_MAX) {
-        panic(str_attach("fatal: too many nested exceptions\n"));
-    }
-    (void)frame;
-    printf(str_attach("interrupt_handler_1 called!\n"));
-
     kernel.nested_exception_counter = 0;
 }
 

@@ -28,7 +28,7 @@ __attribute__((interrupt, noreturn))
 void interrupt_default(struct interrupt_frame* frame);
 
 __attribute__((interrupt))
-void interrupt_handler_1(struct interrupt_frame* frame);
+void interrupt_handler_syscall(struct interrupt_frame* frame);
 
 /**
  * IRQs

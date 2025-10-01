@@ -8,6 +8,8 @@
 #include "tty.h"
 #include "libc.h"
 
+#include "serial.h"
+
 static struct terminal_state t = {
     .row    = 0,
     .column = 0,
@@ -62,6 +64,8 @@ void terminal_scroll(int n)
 
 void terminal_putchar(int c)
 {
+    serial_putchar(SERIAL_COM1, c);
+
 	/* clear the cursor marker */
 	terminal_putentryat(' ', t.color, t.column, t.row);
 

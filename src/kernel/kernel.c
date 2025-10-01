@@ -2,35 +2,43 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "file_system.h"
 #include "gdt.h"
-#include "tss.h"
 #include "idt.h"
 #include "interrupts.h"
-#include "types.h"
 #include "kernel_state.h"
-#include "pic.h"
-
 #include "page.h"
+#include "pic.h"
+#include "serial.h"
+#include "tss.h"
+#include "types.h"
 
 // Future user-space
 #include "libc.h"
 #include "tty.h"
 #include "str.h"
 #include "bitmap.h"
+#include "syscall.h"
 
-uint32_t page_directory[1024] __attribute__((aligned(4096)));
-uint32_t page_table[1024]     __attribute__((aligned(4096)));
-_Static_assert(((uint32_t)page_table     & 0xfff) == 0);
-_Static_assert(((uint32_t)page_directory & 0xfff) == 0);
+#define syscall(number, b, c, d) \
+    __asm__ volatile(            \
+        "int $0x80\n"            \
+        :                        \
+        : "a"(number),           \
+          "b"(b),                \
+          "c"(c),                \
+          "d"(d)                 \
+        : "memory"               \
+    );
 
 static void user_mode_code(void*)
 {
-    printf(str_attach("hello from user-space before interrupt :)\n"));
-    __asm__ volatile ("int $0x80");
-
+    //printf(str_attach("hello from user-space before interrupt :)\n"));
+    //__asm__ volatile ("int $0x80");
+    int output;
+    syscall(SYSCALL_PRINT, &str_attach("hello from ring 3\n"), 0, 0);
 #if 0
-    printf(str_attach("hello from user-space before exception :)\n"));
-    /* test division by 0 exception */
+    syscall(SYSCALL_PRINT, &str_attach("trying to divide by zero :)\n"), 0, 0);
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wdiv-by-zero"
     volatile int a = 5/0;
@@ -38,9 +46,13 @@ static void user_mode_code(void*)
     #pragma GCC diagnostic pop
 
     // should not happen
-    printf(str_attach("hello from userspace after interrupt and exception!\n"));
+    syscall(SYSCALL_PRINT, &str_attach("hello from userspace after interrupt and exception!\n"), 0, 0);
 #endif
-    
+
+    syscall(SYSCALL_EXIT, 0, 0, 0);
+
+    while (1)
+        ;
 }
 
 static void ring3_mode(segment_t udata_segment, segment_t ucode_segment, func_t callback)
@@ -60,9 +72,9 @@ static void ring3_mode(segment_t udata_segment, segment_t ucode_segment, func_t 
         "push %[callback]\n"
         "iret"
         :
-        : [udata]    "i"(udata_segment),
-          [ucode]    "i"(ucode_segment),
-          [callback] "i"(callback)
+        : [udata]    "m"(udata_segment),
+          [ucode]    "m"(ucode_segment),
+          [callback] "m"(callback)
         : "eax"
     );
 }
@@ -77,6 +89,13 @@ void kernel_main(void)
 {
     __asm__ volatile("cli");
 
+
+    /* Set up the serial port
+     * ======================
+     */
+    if (serial_init(SERIAL_COM1, 3) != 0) {
+        panic(str_attach("serial_init failed"));
+    }
 
     /* Set up the GDT
 	 * ============== */
@@ -190,7 +209,7 @@ void kernel_main(void)
 	kernel.idt[IDT_DESC_PIC2 + 7] = mint(irq_handler_15);
     
     /* Interrupts */
-    kernel.idt[IDT_DESC_INTERRUPT_SYSCALL] = mint(interrupt_handler_1);
+    kernel.idt[IDT_DESC_INTERRUPT_SYSCALL] = mint(interrupt_handler_syscall);
 #undef mtrap
 #undef mint
 #undef m_idt_default
@@ -208,7 +227,17 @@ void kernel_main(void)
     /* enable interrupts */
     __asm__ volatile("sti");
 
-    printf(str_attach("setting up paging...\n"));
+    /*
+     * File system setup
+     * =================
+     * */
+    printf(str_attach("Testing file system...\n"));
+    {
+        int ok = test_file_system();
+        if (ok != 0) {
+            panic(str_attach("test_file_system() returned non-zero value"));
+        }
+    }
 
     /**
      * Paging setup
@@ -216,33 +245,41 @@ void kernel_main(void)
      * We align by 1<<12 because page directory and page table entries store
      * addresses from bit 12-31
      *
-     * For now give user access to pages to avoid a page fault 
+     * For now give user access to pages to avoid a page fault, since it's not
+     * implemented properly
      */
-    for (size_t i = 0; i < sizeof page_table / sizeof *page_table; i++) {
-        page_directory[i] = PDE_WRITE;
-    }
+    printf(str_attach("setting up paging...\n"));
 
-    for (size_t i = 0; i < sizeof page_table / sizeof *page_table; i++) {
-        page_table[i] = PTE_ADDRESS(i) | PTE_WRITE | PTE_PRESENT | PTE_USER;
-    }
+    static uint32_t page_directory[1024] __attribute__((aligned(4096)));
+    static uint32_t page_table_0[1024]   __attribute__((aligned(4096)));
+    _Static_assert(((uint32_t)page_directory & 0xfff) == 0);
+    _Static_assert(((uint32_t)page_table_0   & 0xfff) == 0);
 
-    page_directory[0] = ((uint32_t)page_table) | PDE_WRITE | PDE_PRESENT | PDE_USER_ACCESS;
+    for (size_t i = 0; i < sizeof page_directory / sizeof *page_directory; i++) {
+        page_directory[i] = PDE_WRITE; /* no present bit */
+    }
+    page_directory[1023] = (uint32_t)page_directory;
+
+    for (size_t i = 0; i < sizeof page_table_0 / sizeof *page_table_0; i++) {
+        // for now this page table allows user-space code to access
+        // kernel-space memory (PTE_USER)
+        page_table_0[i] = PTE_ADDRESS(i) | PTE_WRITE | PTE_PRESENT | PTE_USER;
+    }
+    page_directory[0] = ((uint32_t)page_table_0) | PDE_WRITE | PDE_PRESENT | PDE_USER_ACCESS;
 
     cr3_set((uint32_t)page_directory);
-    cr0_flags_set(CR0_PAGING);
+    cr0_flags_set(CR0_PAGING | CR0_PROTECTED_MODE);
 
     printf(str_attach("done!\n"));
 
     printf(str_attach("starting code in ring 3...\n"));
+
     /* Finally go to ring 3 */
     ring3_mode(segment(SEGMENT_USER_DATA, SEGMENT_GDT, 3),
                segment(SEGMENT_USER_CODE, SEGMENT_GDT, 3),
                user_mode_code);
 
     printf(str_attach("back to kernel mode...\n"));
-
-    while (1)
-        /* busy loop */;
 
     __asm__ volatile ("hlt");
 }

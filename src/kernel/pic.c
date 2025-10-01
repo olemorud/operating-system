@@ -67,25 +67,25 @@ void pic8259_clear_irq_mask(uint16_t mask)
  * https://wiki.osdev.org/8259_PIC#ISR_and_IRR
  * ===========================================
  * */
-static uint16_t get_irq_reg(int ocw3)
-{
-    /* OCW3 to PIC CMD to get the register values.  PIC2 is chained, and
-       represents IRQs 8-15.  PIC1 is IRQs 0-7, with 2 being the chain */
-    outb(PIC1_COMMAND, ocw3);
-    outb(PIC2_COMMAND, ocw3);
-    return (inb(PIC2_COMMAND) << 8) | inb(PIC1_COMMAND);
-}
-
-/* Returns the combined value of the cascaded PICs irq request register */
-uint16_t pic8259_get_irr(void)
-{
-    return get_irq_reg(OCW3_READ_IRR);
-}
-
-/* Returns the combined value of the cascaded PICs in-service register */
-uint16_t pic8259_get_isr(void)
-{
-    return get_irq_reg(OCW3_READ_ISR);
-}
-
-/* =========================================== */
+//static uint16_t get_irq_reg(int ocw3)
+//{
+//    /* OCW3 to PIC CMD to get the register values.  PIC2 is chained, and
+//       represents IRQs 8-15.  PIC1 is IRQs 0-7, with 2 being the chain */
+//    outb(PIC1_COMMAND, ocw3);
+//    outb(PIC2_COMMAND, ocw3);
+//    return (inb(PIC2_COMMAND) << 8) | inb(PIC1_COMMAND);
+//}
+//
+///* Returns the combined value of the cascaded PICs irq request register */
+//uint16_t pic8259_get_irr(void)
+//{
+//    return get_irq_reg(OCW3_READ_IRR);
+//}
+//
+///* Returns the combined value of the cascaded PICs in-service register */
+//uint16_t pic8259_get_isr(void)
+//{
+//    return get_irq_reg(OCW3_READ_ISR);
+//}
+//
+///* =========================================== */

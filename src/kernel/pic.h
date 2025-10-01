@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "str.h"
+#include "serial.h"
 
 enum pic8259_port : uint16_t {
     PIC1_COMMAND = 0x20,
@@ -140,29 +141,6 @@ enum ocw3_command : uint8_t {
     OCW3_RESET_SPECIAL_MASK = (1<<3) | OCW3_BIT_SMM,
     OCW3_SET_SPECIAL_MASK   = (1<<3) | OCW3_BIT_ESMM | OCW3_BIT_SMM,
 };
-
-static inline void outb(uint16_t port, uint8_t signal)
-{
-    __asm__ volatile ("outb %[signal], %[port]"
-                    :
-                    : [signal] "a"  (signal),
-                      [port]   "Nd" (port)
-                    : "memory");
-#ifdef ADD_IO_WAIT
-    /* do an I/O operation on an unused port to wait 1-4 microseconds */
-    outb(0x80, 0);
-#endif
-}
-
-static inline uint8_t inb(uint16_t port)
-{
-    uint8_t ret;
-    __asm__ volatile ( "inb %w1, %b0"
-                   : "=a"(ret)
-                   : "Nd"(port)
-                   : "memory");
-    return ret;
-}
 
 void pic8259_remap(int offset1, int offset2);
 

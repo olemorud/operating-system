@@ -56,64 +56,11 @@ enum gdt_flags : uint8_t {
 struct gdt_table_entry gdt_encode_entry(struct gdt_entry_content content);
 
 // only compiles with O1 or higher ¯\_(ツ)_/¯, might have to make this a macro
-static inline void gdt_flush_granular(uint32_t code,
+void gdt_flush_granular(uint32_t code,
                                       uint32_t data,
                                       uint32_t extra_segment,
                                       uint32_t general_segment_1,
                                       uint32_t general_segment_2,
-                                      uint32_t stack_segment)
-{
-    __asm__ volatile (
-        // Far jump to reload the CS register
-        "jmp %[cs], $reload_CS\n"
-        "reload_CS:\n"
-        "movw %[ds], %%ax\n"
-        "movw %%ax,  %%ds\n"
-        "movw %[es], %%ax\n"
-        "movw %%ax,  %%es\n"
-        "movw %[fs], %%ax\n"
-        "movw %%ax,  %%fs\n"
-        "movw %[gs], %%ax\n"
-        "movw %%ax,  %%gs\n"
-        "movw %[ss], %%ax\n"
-        "movw %%ax,  %%ss\n"
-        : // No output operands
-        : [cs] "i"(code),
-          [ds] "i"(data),
-          [es] "i"(extra_segment),
-          [fs] "i"(general_segment_1),
-          [gs] "i"(general_segment_2),
-          [ss] "i"(stack_segment)
-        : "ax" // Clobbered register
-    );
-}
-static inline void gdt_load(struct gdt_table_entry base[], uint16_t gdt_size, segment_t data, segment_t code)
-{
-    /* the lgdt instruction requires a packed alignment */
-    struct __attribute__((packed)) {
-        uint16_t size;
-        uint32_t base;
-    } gdt = {
-        .size = gdt_size,
-        .base = (uint32_t)base,
-    };
+                                      uint32_t stack_segment);
 
-    __asm__ volatile (
-		"lgdt %[gdt]\n"
-        // Far jump to reload the CS register
-        "jmp %[cs], $reload_CS\n"
-        "reload_CS:\n"
-        // Load data segment into AX and then move it to all segment registers
-        "movw %[ds], %%ax\n"
-        "movw %%ax,  %%ds\n"
-        "movw %%ax,  %%es\n"
-        "movw %%ax,  %%fs\n"
-        "movw %%ax,  %%gs\n"
-        "movw %%ax,  %%ss\n"
-        : // No output operands
-        : [gdt] "m"(gdt),
-		  [ds] "i"(data),
-          [cs] "i"(code)
-        : "ax" // Clobbered register
-    );
-}
+void gdt_load(struct gdt_table_entry base[], uint16_t gdt_size, segment_t data, segment_t code);

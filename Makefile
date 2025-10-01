@@ -9,6 +9,7 @@ SOURCE_DIR := src
 BUILD_DIR  := build
 
 CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch" \
+                            --rm                         \
                             --workdir="/scratch"         \
                             --network=none               \
                             -e TERM                      \
@@ -16,7 +17,7 @@ CONTAINER_CMD := podman run -v "$(shell pwd)":"/scratch" \
                             cc-i686:latest
 
 QEMU	   := qemu-system-i386
-QEMU_FLAGS := -d int -no-reboot
+QEMU_FLAGS := -no-reboot -serial stdio # -d int 
 
 CC := $(CONTAINER_CMD) i686-elf-gcc
 LD := $(CONTAINER_CMD) i686-elf-ld
@@ -29,7 +30,7 @@ OBJECTS     := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(
 DEPENDS     := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
 
 CFLAGS := -ffreestanding -nostdlib -std=c2x -MMD -I$(SOURCE_DIR)/lib/include -I$(SOURCE_DIR) -no-pie 
-CFLAGS += -O1 -g3
+CFLAGS += -O0 -g
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -fstack-protector-strong -g3
 CFLAGS += -Wno-unused-function
@@ -81,10 +82,9 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.S Makefile
 
 TEST_BUILD_DIR  := $(BUILD_DIR)/tests
 
-#TEST_SOURCES := $(shell find $(SOURCE_DIR) -name '*_test.c')
-#TEST_DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=.d))
-#TEST_OUTPUT  := $(patsubst $(SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=))
-
+TEST_SOURCES := $(shell find $(SOURCE_DIR) -name '*_test.c')
+TEST_DEPENDS := $(patsubst $(SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=.d))
+TEST_OUTPUT  := $(patsubst $(SOURCE_DIR)/%, $(TEST_BUILD_DIR)/%, $(TEST_SOURCES:.c=))
 
 tests: $(TEST_OUTPUT)
 	$(info TEST_SOURCES is $(TEST_SOURCES))

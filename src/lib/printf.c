@@ -121,12 +121,22 @@ static int print_str(struct printf_state* s, int padding, char pad_char)
     return str.len;
 }
 
+static inline bool isspace(char ch)
+{
+    return ch == '\n' || ch == ' ' || ch == '\t';
+}
+
+static inline bool isprint(char ch)
+{
+    return (ch >= 32 && ch < 127) || isspace(ch);
+}
+
 static int print_char(struct printf_state* s)
 {
     // char is promoted to int when passed through va_arg
     const int ch = va_arg(s->ap, int);
 
-    if (ch >= 32 && ch < 127) {
+    if (isprint(ch)) {
         terminal_putchar(ch);
         return 1;
     } else {
@@ -134,6 +144,30 @@ static int print_char(struct printf_state* s)
     }
 }
 
+static int print_cstr(struct printf_state* s, int padding, char pad_char)
+{
+    // TODO: implement padding
+    (void)padding;
+    (void)pad_char;
+
+    const char* cstr = va_arg(s->ap, const char*);
+    char ch;
+    int written = 0;
+    while ((ch = *(cstr++))) {
+        if (isprint(ch)) {
+            terminal_putchar(ch);
+        } else {
+            terminal_putchar('{');
+            written += print_long(ch, str_attach("0123456789ABCDEF"), false, 0, 0);
+            terminal_putchar('}');
+            written += 2;
+        }
+        written += 1;
+    }
+    return written;
+}
+
+/* cs register */
 static int print_cs(struct printf_state* s)
 {
     int n;
@@ -161,7 +195,7 @@ static int print_cs(struct printf_state* s)
     }
 
     unsigned int ring = (cs>>5) & 0b11;
-    n = printf(str_attach("DPL({uint})"), ring);
+    n = printf(str_attach("DPL:{uint}"), ring);
     if (n == -1) {
         return -1;
     }
@@ -205,6 +239,9 @@ static int parse_format_cmd(struct printf_state* s)
         case 'x16':
         case 'x32':
             return print_x32(s, pad, pad_char);
+
+        case 'cstr':
+            return print_cstr(s, pad, pad_char);
 
         case 'str':
             return print_str(s, pad, pad_char);

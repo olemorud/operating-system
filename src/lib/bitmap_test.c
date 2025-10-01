@@ -292,5 +292,24 @@ int main()
 
     } while (0);
 
+    test_begin("test bitmap_find()");
+    do {
+        uint32_t data[4] = {0};
+        struct bitmap b = BITMAP_ATTACH(data, sizeof data);
+        constexpr size_t pos = 42;
+        int ok = bitmap_set(&b, pos);
+        if (ok != 0) {
+            test_fail("bitmap_set() failed while testing bitmap_find()");
+            break;
+        }
+        int found = bitmap_find(&b, 1);
+        if (found != pos) {
+            test_fail("bitmap_find() failed, expected %zu, got %i", pos, found);
+            break;
+        }
+
+        test_ok("bitmap_find() ok! pos: %zu, found: %i", pos, found);
+    } while (0);
+
     return g_status;
 }
