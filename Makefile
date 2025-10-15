@@ -24,8 +24,9 @@ LD := $(CONTAINER_CMD) i686-elf-ld
 AS := $(CONTAINER_CMD) i686-elf-as
 AR := $(CONTAINER_CMD) i686-elf-ar
 
-C_SOURCES   := $(shell find $(SOURCE_DIR) ! -name '*_test*' -name '*.c')
-ASM_SOURCES := $(shell find $(SOURCE_DIR) -name '*.S')
+C_SOURCES   := $(shell set -x; find $(SOURCE_DIR) -path $(SOURCE_DIR)/userspace -prune -o -type f -name '*.c' ! -name '*_test*' -print)
+$(info C_SOURCES=$(C_SOURCES))
+ASM_SOURCES := $(shell find $(SOURCE_DIR) -name '*.S' ! -name '*userspace*')
 OBJECTS     := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.o) $(ASM_SOURCES:.S=.o))
 DEPENDS     := $(patsubst $(SOURCE_DIR)/%, $(BUILD_DIR)/%, $(C_SOURCES:.c=.d))
 
@@ -59,7 +60,7 @@ myos.iso: $(BUILD_DIR)/myos.bin
 
 $(BUILD_DIR)/myos.bin: $(OBJECTS)
 	@mkdir -p $(@D)
-	$(CC) -T linker.ld -o $@ $(CFLAGS) -nostdlib $^ -lgcc
+	$(CC) -T linker.ld -o $@ $(CFLAGS) -nostdlib $(OBJECTS) -lgcc
 
 -include $(DEPENDS)
 
@@ -74,7 +75,6 @@ $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.c Makefile
 $(BUILD_DIR)/%.o: $(SOURCE_DIR)/%.S Makefile
 	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) $< -o $@
-
 
 ###################
 #      TESTS      #

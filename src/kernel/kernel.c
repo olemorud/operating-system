@@ -20,23 +20,13 @@
 #include "bitmap.h"
 #include "syscall.h"
 
-#define syscall(number, b, c, d) \
-    __asm__ volatile(            \
-        "int $0x80\n"            \
-        :                        \
-        : "a"(number),           \
-          "b"(b),                \
-          "c"(c),                \
-          "d"(d)                 \
-        : "memory"               \
-    );
-
-static void user_mode_code(void*)
+__attribute__((section(".userland-text")))
+void user_mode_code(void*)
 {
-    //printf(str_attach("hello from user-space before interrupt :)\n"));
-    //__asm__ volatile ("int $0x80");
-    int output;
-    syscall(SYSCALL_PRINT, &str_attach("hello from ring 3\n"), 0, 0);
+    const char msg[] = "hello from ring 3\n";
+    syscall(SYSCALL_PRINT, &str_attach(msg), 0, 0);
+
+    volatile uint32_t a = *(uint32_t*)0;
 #if 0
     syscall(SYSCALL_PRINT, &str_attach("trying to divide by zero :)\n"), 0, 0);
     #pragma GCC diagnostic push
@@ -51,9 +41,29 @@ static void user_mode_code(void*)
 
     syscall(SYSCALL_EXIT, 0, 0, 0);
 
-    while (1)
-        ;
+    //#pragma GCC diagnostic push
+    //#pragma GCC diagnostic ignored "-Wunused-value"
+    //*(uint32_t*)0;
+    //#pragma GCC diagnostic pop
 }
+
+typedef uint32_t pde_t;
+
+struct proc {
+    uint32_t (*page_directory)[1024];
+    uint8_t* kernel_stack;
+    char     name[16];
+    uint32_t mem_size;
+    
+    // TODO
+    //struct   trapframe *tf;
+    //struct context *context;     // swtch() here to run process
+    //void *chan;                  // If non-zero, sleeping on chan
+    //int killed;                  // If non-zero, have been killed
+    //struct file *ofile[NOFILE];  // Open files
+    //struct inode *cwd;           // Current directory
+};
+
 
 static void ring3_mode(segment_t udata_segment, segment_t ucode_segment, func_t callback)
 {
@@ -164,6 +174,7 @@ void kernel_main(void)
 	 * Setup the TSS
 	 * ============= */
 	static uint8_t kernel_stack[KERNEL_STACK_SIZE];
+    memset(&kernel.tss, 0, sizeof kernel.tss);
     kernel.tss.ss0 = segment(SEGMENT_KERNEL_DATA, SEGMENT_GDT, 0);
     kernel.tss.esp0 = (uint32_t)kernel_stack;
     tss_load(segment(SEGMENT_TASK_STATE, SEGMENT_GDT, 0));
@@ -242,30 +253,36 @@ void kernel_main(void)
     /**
      * Paging setup
      * ============
-     * We align by 1<<12 because page directory and page table entries store
-     * addresses from bit 12-31
+     * We align by (1<<12) == 4096 because page directory and page table
+     * entries store addresses from bit 12-31
      *
      * For now give user access to pages to avoid a page fault, since it's not
      * implemented properly
      */
     printf(str_attach("setting up paging...\n"));
+    printf(str_attach("kernel end: {bin}\n"), kernel_memory_end);
 
-    static uint32_t page_directory[1024] __attribute__((aligned(4096)));
-    static uint32_t page_table_0[1024]   __attribute__((aligned(4096)));
-    _Static_assert(((uint32_t)page_directory & 0xfff) == 0);
-    _Static_assert(((uint32_t)page_table_0   & 0xfff) == 0);
+    static uint32_t page_directory[1024]    __attribute__((aligned(4096)));
+    static uint32_t page_table_kernel[1024] __attribute__((aligned(4096)));
+    static uint32_t page_table_user[1024]   __attribute__((aligned(4096)));
+    _Static_assert(((uint32_t)page_directory    & 0xfff) == 0);
+    _Static_assert(((uint32_t)page_table_kernel & 0xfff) == 0);
+    _Static_assert(((uint32_t)page_table_user   & 0xfff) == 0);
 
     for (size_t i = 0; i < sizeof page_directory / sizeof *page_directory; i++) {
         page_directory[i] = PDE_WRITE; /* no present bit */
     }
-    page_directory[1023] = (uint32_t)page_directory;
+    page_directory[sizeof page_directory / sizeof *page_directory - 1] = (uint32_t)page_directory | PDE_WRITE | PDE_PRESENT;
 
-    for (size_t i = 0; i < sizeof page_table_0 / sizeof *page_table_0; i++) {
-        // for now this page table allows user-space code to access
-        // kernel-space memory (PTE_USER)
-        page_table_0[i] = PTE_ADDRESS(i) | PTE_WRITE | PTE_PRESENT | PTE_USER;
+    for (size_t i = 0; i < sizeof page_table_kernel / sizeof *page_table_kernel; i++) {
+        page_table_kernel[i] = (i<<12) | PTE_WRITE | PTE_PRESENT;
     }
-    page_directory[0] = ((uint32_t)page_table_0) | PDE_WRITE | PDE_PRESENT | PDE_USER_ACCESS;
+    page_directory[0] = ((uint32_t)page_table_kernel) | PDE_WRITE | PDE_PRESENT | PDE_USER_ACCESS;
+
+    for (size_t i = 0; i < sizeof page_table_user / sizeof *page_table_user; i++) {
+        page_table_user[i] = ((uint32_t)kernel_memory_end + (i<<12)) | PTE_WRITE | PTE_PRESENT | PTE_USER;
+    }
+    page_directory[1] = ((uint32_t)page_table_user) | PDE_WRITE | PDE_PRESENT | PDE_USER_ACCESS;
 
     cr3_set((uint32_t)page_directory);
     cr0_flags_set(CR0_PAGING | CR0_PROTECTED_MODE);
@@ -273,6 +290,14 @@ void kernel_main(void)
     printf(str_attach("done!\n"));
 
     printf(str_attach("starting code in ring 3...\n"));
+
+    /* Load userspace binary to memory */
+    
+    printf(str_attach("address of userspace code: {x32} = {addr}\n"), user_mode_code, user_mode_code);
+
+    printf(str_attach("im going ring 3 mode\n"));
+
+    //new_proc();
 
     /* Finally go to ring 3 */
     ring3_mode(segment(SEGMENT_USER_DATA, SEGMENT_GDT, 3),
@@ -283,4 +308,3 @@ void kernel_main(void)
 
     __asm__ volatile ("hlt");
 }
-

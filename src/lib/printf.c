@@ -109,6 +109,26 @@ static int print_b32(struct printf_state* s, int padding, char pad_char)
     return print_long(n, alphabet, false, padding, pad_char);
 }
 
+static int print_linear_address(struct printf_state* s)
+{
+    int padding = 0;
+    char pad_char = '\0';
+    uint32_t addr = va_arg(s->ap, uint32_t);
+
+    uint32_t dir = addr >> 22;
+    uint32_t page = (addr & ((1<<22)-1)) >> 12;
+    uint32_t offset = (addr & ((1<<12)-1));
+
+    struct str alphabet = str_attach("01");
+    int n = 0;
+    n += print_long(dir, alphabet, false, padding, pad_char);
+    terminal_putchar(' ');
+    n += print_long(page, alphabet, false, padding, pad_char);
+    terminal_putchar(' ');
+    n += print_long(offset, alphabet, false, padding, pad_char);
+    return n;
+}
+
 static int print_str(struct printf_state* s, int padding, char pad_char)
 {
     // TODO: implement padding
@@ -245,6 +265,12 @@ static int parse_format_cmd(struct printf_state* s)
 
         case 'str':
             return print_str(s, pad, pad_char);
+
+        case 'bin':
+            return print_b32(s, pad, pad_char);
+
+        case 'addr':
+            return print_linear_address(s);
 
         case 'char':
             return print_char(s);

@@ -128,7 +128,7 @@ void exception_handler_page_fault(struct interrupt_frame* frame, int err)
     static const struct str error_flag_str[page_fault_error_count] = {
         [present]           = str_attach("Caused by a page-protection violation"),
         [write]             = str_attach("Caused by a write access"),
-        [user]              = str_attach("Caused while CPL == 3 (not neccessarily a privilige escalation)"),
+        [user]              = str_attach("Caused by userspace (not neccessarily a privilige escalation)"),
         [reserved_write]    = str_attach("One or more page directory entries contain reserved bits which are set to 1"),
         [instruction_fetch] = str_attach("Caused by an instruction fetch"),
         [protection_key]    = str_attach("Caused by a protection-key violation"),
@@ -139,7 +139,7 @@ void exception_handler_page_fault(struct interrupt_frame* frame, int err)
     static const struct str error_flag_zero_str[page_fault_error_count] = {
         [present] = str_attach("Caused by a non-present page"),
         [write]   = str_attach("Caused by a read access"),
-        [user]    = str_attach("Caused while CPL != 3"),
+        [user]    = str_attach("Caused by ring 0"),
     };
 
     for (size_t i = 0; i < page_fault_error_count; i++) {
@@ -150,6 +150,8 @@ void exception_handler_page_fault(struct interrupt_frame* frame, int err)
         }
     } 
     printf(str_attach("\n"));
+
+    printf(str_attach("Instruction(s) that caused violation: {x32}\n"), *(uint32_t*)frame->ip);
 
     print_interrupt_frame(frame);
 

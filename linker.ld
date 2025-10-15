@@ -58,11 +58,20 @@ SECTIONS
 	{
 		*(COMMON)
 		*(.bss)
-
-        kernel_memory_end = .;
 	}
+
+	kernel_memory_end = 0x400000;
+	. = 0x400000;
 
 	/* The compiler may produce other sections, by default it will put them in
 	   a segment with the same name. Simply add stuff here as needed. */
+
+	.userland-text ALIGN(16) : {
+		*(.userland-text)
+	}
+
+	.userland-rodata ALIGN(16) : {
+		*(.userland-rodata)
+	}
 }
 
